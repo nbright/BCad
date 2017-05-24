@@ -1,0 +1,7 @@
+<Window xmlns="https://github.com/avaloniaui"
+        Title="BCad">
+  <TabControl>
+    <TabItem Header="Draw"><Button>clicky</Button></TabItem>
+    <TabItem Header="Edit"><Button>don't clicky</Button></TabItem>
+  </TabControl>
+</Window>
