@@ -1,0 +1,4 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:skia="clr-namespace:SkiaSharp.Views.WPF;assembly=SkiaSharp.Views.WPF">
+  <skia:SKElement PaintSurface="PaintSurface" />
+</UserControl>
