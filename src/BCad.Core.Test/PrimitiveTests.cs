@@ -16,7 +16,7 @@ namespace BCad.Core.Test
 
         #region Helpers
 
-        private const double BezierConstant = 0.551915024494;
+        public const double BezierConstant = 0.551915024494;
 
         private static readonly PrimitiveBezier CircleQuadrant1Bezier = new PrimitiveBezier(new Point(1.0, 0.0, 0.0), new Point(1.0, BezierConstant, 0.0), new Point(BezierConstant, 1.0, 0.0), new Point(0.0, 1.0, 0.0));
 

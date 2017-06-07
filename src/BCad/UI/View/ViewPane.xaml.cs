@@ -927,6 +927,13 @@ namespace BCad.UI.View
         {
             switch (primitive.Kind)
             {
+                case PrimitiveKind.Bezier:
+                    var bezier = (PrimitiveBezier)primitive;
+                    var segmentCount = 100;
+                    var pointCount = segmentCount + 1;
+                    var tValues = Enumerable.Range(0, pointCount).Select(t => (double)t / pointCount);
+                    var screenPoints = tValues.Select(t => windowsTransformationMatrix.Transform(bezier.ComputeParameterizedPoint(t)));
+                    return ClosestPoint(screenPoints.ToArray(), screenPoint);
                 case PrimitiveKind.Ellipse:
                     var el = (PrimitiveEllipse)primitive;
                     return ClosestPoint(el.GetProjectedVerticies(windowsTransformationMatrix, 360).ToArray(), screenPoint);
@@ -959,7 +966,7 @@ namespace BCad.UI.View
                         return Tuple.Create(0.0, screenPoint);
                     return ClosestPoint(borderPoints, screenPoint);
                 default:
-                    throw new InvalidOperationException();
+                    throw new NotImplementedException($"Unable to determine the closest point to a {primitive.Kind} primitive.");
             }
         }
 

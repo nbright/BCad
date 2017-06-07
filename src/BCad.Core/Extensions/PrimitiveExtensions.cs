@@ -892,6 +892,8 @@ namespace BCad.Extensions
                     return new Location((PrimitivePoint)primitive);
                 case PrimitiveKind.Text:
                     return new Text((PrimitiveText)primitive);
+                case PrimitiveKind.Bezier:
+                    return Spline.FromBezier((PrimitiveBezier)primitive);
                 default:
                     throw new ArgumentException("primitive.Kind");
             }
@@ -1005,12 +1007,8 @@ namespace BCad.Extensions
 
         private static bool IsPointOnPrimitive(this PrimitiveBezier bezier, Point point)
         {
-            // translate curve down by `point.Y`, then solve for zeros and see if any X values == `point.X`
-            var original = bezier;
-            bezier = (PrimitiveBezier)original.Move(new Vector(0.0, -point.Y, 0.0));
-            var roots = bezier.FindYRoots().Where(r => r >= 0.0 && r <= 1.0);
-            var points = roots.Select(original.ComputeParameterizedPoint).Where(px => MathHelper.CloseTo(px.X, point.X));
-            return points.Count() > 0;
+            var t = bezier.GetParameterValueForPoint(point);
+            return t.HasValue;
         }
 
         public static double GetAngle(this PrimitiveEllipse ellipse, Point point)

@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Linq;
 using BCad.Entities;
 using BCad.Extensions;
+using BCad.Helpers;
+using BCad.Primitives;
 using BCad.Utilities;
 using Xunit;
 
@@ -187,6 +189,137 @@ namespace BCad.Core.Test
                 {
                     new Ellipse(Point.Origin, new Vector(0.6123724356958, 1.06066017177983, 0.0), 0.577350269189626, 0, 180.000062635721, Vector.ZAxis)
                 });
+        }
+
+        [Fact]
+        public void TrimLineOnSplineTest1()
+        {
+            // ___   /      ___
+            //    \ /          \  o
+            //     \    =>      \
+            //    / |          / |
+            //   /  |         /  |
+            DoTrim(
+                existingEntities: new[]
+                {
+                    Spline.FromBezier(new PrimitiveBezier(
+                        new Point(1.0, 0.0, 0.0),
+                        new Point(1.0, PrimitiveTests.BezierConstant, 0.0),
+                        new Point(PrimitiveTests.BezierConstant, 1.0, 0.0),
+                        new Point(0.0, 1.0, 0.0)))
+                },
+                entityToTrim: new Line(new Point(0.0, 0.0, 0.0), new Point(1.0, 1.0, 0.0)),
+                selectionPoint: new Point(0.9, 0.9, 0.0),
+                expectTrim: true,
+                expectedAdded: new[]
+                {
+                    new Line(new Point(0.0, 0.0, 0.0), new Point(0.70696813418525, 0.70696813418525, 0.0))
+                });
+        }
+
+        [Fact]
+        public void TrimLineOnSplineTest2()
+        {
+            // taken from a real-world example
+            var trimLine = new Line(new Point(55.0, 30.0, 0.0), new Point(115.0, 85.0, 0.0));
+            DoTrim(
+                existingEntities: new[]
+                {
+                    new Spline(
+                    3,
+                    new[]
+                    {
+                        new Point(59.1, 66.8, 0.0),
+                        new Point(63.1, 81.7, 0.0),
+                        new Point(127.2, 93.7, 0.0),
+                        new Point(100.1, 12.9, 0.0),
+                        new Point(55.4, 52.8, 0.0),
+                        new Point(59.1, 66.8, 0.0)
+                    },
+                    new[] { 0.0, 0.0, 0.0, 0.0, 0.36, 0.65, 1.0, 1.0, 1.0, 1.0 })
+                },
+                entityToTrim: trimLine,
+                selectionPoint: trimLine.MidPoint(),
+                expectTrim: true,
+                expectedAdded: new[]
+                {
+                    new Line(trimLine.P1, new Point(70.3906929464355, 44.1081352008992, 0.0)),
+                    new Line(new Point(106.773169077854, 77.458738321366, 0.0), trimLine.P2)
+                });
+        }
+
+        [Fact]
+        public void TrimSplineOnLineTest1()
+        {
+            // ___   /      ___   /
+            //    \ /          \ /
+            //     \    =>      /
+            //    / |          / o
+            //   /  |         /
+            DoTrim(
+                existingEntities: new[]
+                {
+                    new Line(new Point(0.0, 0.0, 0.0), new Point(1.0, 1.0, 0.0))
+                },
+                entityToTrim: Spline.FromBezier(new PrimitiveBezier(
+                    new Point(1.0, 0.0, 0.0),
+                    new Point(1.0, PrimitiveTests.BezierConstant, 0.0),
+                    new Point(PrimitiveTests.BezierConstant, 1.0, 0.0),
+                    new Point(0.0, 1.0, 0.0))),
+                selectionPoint: new Point(Math.Cos(30.0 * MathHelper.DegreesToRadians), Math.Sin(30.0 * MathHelper.DegreesToRadians), 0.0),
+                expectTrim: true,
+                expectedAdded: new[]
+                {
+                    Spline.FromBezier(new PrimitiveBezier(
+                        new Point(1.0, 0.0, 0.0),
+                        new Point(1.0, PrimitiveTests.BezierConstant, 0.0),
+                        new Point(PrimitiveTests.BezierConstant, 1.0, 0.0),
+                        new Point(0.0, 1.0, 0.0)))
+                });
+        }
+
+        [Fact]
+        public void TrimSplineOnLineTest2()
+        {
+            //      _______|_              _______|
+            //     /       | \            /       |
+            //    /        |  \          /        |
+            //   |         |   |o       |         |
+            //   |         |   |   =>   |         |
+            //    \        |  /          \        |
+            //     \       | /            \       |
+            //      -------|-              -------|
+            var sqrt2over2 = Math.Sqrt(2.0) / 2.0;
+            var unitCircle = new PrimitiveEllipse(Point.Origin, 1.0, Vector.ZAxis);
+            var circleSpline = Spline.FromBeziers(unitCircle.AsBezierCurves());
+            var trimLine = new Line(new Point(sqrt2over2, -1.0, 0.0), new Point(sqrt2over2, 1.0, 0.0));
+
+            // 45-90 degrees
+            var q1trimBezier = new PrimitiveBezier(
+                new Point(0.70696813418525, 0.70696813418525, 0.0),
+                new Point(0.525957512247, 0.8879787561235, 0.0),
+                new Point(0.275957512247, 1.0, 0.0),
+                new Point(0.0, 1.0, 0.0));
+
+            // 270-315 degrees
+            var q4trimBezier = new PrimitiveBezier(
+                new Point(0.0, -1.0, 0.0),
+                new Point(0.275957512247, -1.0, 0.0),
+                new Point(0.525957512247, -0.8879787561235, 0.0),
+                new Point(0.70696813418525, -0.70696813418525, 0.0));
+
+            var resultCurves = new List<PrimitiveBezier>();
+            resultCurves.Add(q1trimBezier);
+            resultCurves.AddRange(unitCircle.AsBezierCurves().Skip(1).Take(2));
+            resultCurves.Add(q4trimBezier);
+            var resultSpline = Spline.FromBeziers(resultCurves);
+
+            DoTrim(
+                existingEntities: new[] { trimLine },
+                entityToTrim: circleSpline,
+                selectionPoint: new Point(1.0, 0.0, 0.0),
+                expectTrim: true,
+                expectedAdded: new[] { resultSpline });
         }
 
         [Fact]

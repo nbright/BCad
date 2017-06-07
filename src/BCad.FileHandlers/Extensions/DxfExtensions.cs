@@ -236,6 +236,14 @@ namespace BCad.FileHandlers.Extensions
             return new Text(text.Value ?? string.Empty, text.Location.ToPoint(), text.Normal.ToVector(), text.TextHeight, text.Rotation, text.GetEntityColor(), text);
         }
 
+        public static Spline ToSpline(this DxfSpline spline)
+        {
+            // only degree 3 curves are currently supported
+            return spline.DegreeOfCurve == 3
+                ? new Spline(spline.DegreeOfCurve, spline.ControlPoints.Select(p => p.ToPoint()), spline.KnotValues, spline.GetEntityColor(), spline)
+                : null;
+        }
+
         public static Entity ToEntity(this DxfEntity item)
         {
             Entity entity = null;
@@ -264,6 +272,9 @@ namespace BCad.FileHandlers.Extensions
                     break;
                 case DxfEntityType.Polyline:
                     entity = ((DxfPolyline)item).ToPolyline();
+                    break;
+                case DxfEntityType.Spline:
+                    entity = ((DxfSpline)item).ToSpline();
                     break;
                 case DxfEntityType.Text:
                     entity = ((DxfText)item).ToText();

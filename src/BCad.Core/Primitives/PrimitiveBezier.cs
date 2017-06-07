@@ -2,6 +2,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using BCad.Extensions;
 using BCad.Helpers;
 
 namespace BCad.Primitives
@@ -33,6 +35,22 @@ namespace BCad.Primitives
                 P3 * (3.0 * tprime * t * t) +
                 P4 * (t * t * t);
             return point;
+        }
+
+        public double? GetParameterValueForPoint(Point point)
+        {
+            // translate curve down by `point.Y`, then solve for zeros and see if any X values == `point.X`
+            var bezier = (PrimitiveBezier)this.Move(new Vector(0.0, -point.Y, 0.0));
+            var roots = bezier.FindYRoots().Where(r => r >= 0.0 && r <= 1.0);
+            foreach (var root in roots)
+            {
+                if (MathHelper.CloseTo(ComputeParameterizedPoint(root).X, point.X))
+                {
+                    return root;
+                }
+            }
+
+            return null;
         }
 
         public IEnumerable<double> FindYRoots()
@@ -127,6 +145,16 @@ namespace BCad.Primitives
         public BoundingBox GetBoundingBox()
         {
             return BoundingBox.FromPoints(P1, P2, P3, P4);
+        }
+
+        public static PrimitiveBezier FromPoints(IList<Point> controlPoints, int startIndex, int pointCount)
+        {
+            if (pointCount != 4)
+            {
+                throw new NotImplementedException("Only cubic Bezier curves of 4 points are supported.");
+            }
+
+            return new PrimitiveBezier(controlPoints[startIndex], controlPoints[startIndex + 1], controlPoints[startIndex + 2], controlPoints[startIndex + 3]);
         }
     }
 }
