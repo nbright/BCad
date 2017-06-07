@@ -89,5 +89,12 @@ namespace BCad.Helpers
                 && CloseTo(expected.M43, actual.M43)
                 && CloseTo(expected.M44, actual.M44);
         }
+
+        public static double CubeRoot(double v)
+        {
+            return v < 0.0
+                ? -Math.Pow(-v, 1.0 / 3.0)
+                : Math.Pow(v, 1.0 / 3.0);
+        }
     }
 }

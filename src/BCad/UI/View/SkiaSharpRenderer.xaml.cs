@@ -205,6 +205,26 @@ namespace BCad.UI.View
                         canvas.Restore();
                         break;
                     }
+                case PrimitiveKind.Bezier:
+                    {
+                        paint.IsStroke = true;
+                        var bezier = (PrimitiveBezier)primitive;
+                        var lineSegments = 10;
+                        using (var path = new SKPath())
+                        {
+                            path.MoveTo(transform.Transform(bezier.P1).ToSKPoint());
+                            for (int i = 1; i < lineSegments; i++)
+                            {
+                                var t = (double)i / lineSegments;
+                                var next = bezier.ComputeParameterizedPoint(t);
+                                path.LineTo(transform.Transform(next).ToSKPoint());
+                            }
+
+                            path.LineTo(transform.Transform(bezier.P4).ToSKPoint());
+                            canvas.DrawPath(path, paint);
+                        }
+                        break;
+                    }
             }
 
             paint.StrokeWidth = oldStrokeWidth;

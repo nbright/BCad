@@ -230,6 +230,7 @@ namespace BCad.Utilities
                     result = new PrimitivePoint(point.Location + pointOffsetVector, point.Color);
                     break;
                 case PrimitiveKind.Text:
+                case PrimitiveKind.Bezier:
                     result = null;
                     break;
                 default:
@@ -371,8 +372,8 @@ namespace BCad.Utilities
                             Offset(drawingPlane, line, line.P1 - offsetVector, distance)
                         };
                 case PrimitiveKind.Point:
-                    return Enumerable.Empty<IPrimitive>();
                 case PrimitiveKind.Text:
+                case PrimitiveKind.Bezier:
                     return Enumerable.Empty<IPrimitive>();
                 default:
                     throw new ArgumentException("primitive.Kind");

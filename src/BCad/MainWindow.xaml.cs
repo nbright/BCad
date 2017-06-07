@@ -129,7 +129,7 @@ namespace BCad
 
         private void SetDebugText()
         {
-            int lineCount = 0, ellipseCount = 0, pointCount = 0, textCount = 0;
+            int lineCount = 0, ellipseCount = 0, pointCount = 0, textCount = 0, bezierCount = 0;
             foreach (var ent in Workspace.Drawing.GetLayers().SelectMany(l => l.GetEntities()).SelectMany(en => en.GetPrimitives()))
             {
                 switch (ent.Kind)
@@ -146,13 +146,16 @@ namespace BCad
                     case PrimitiveKind.Text:
                         textCount++;
                         break;
+                    case PrimitiveKind.Bezier:
+                        bezierCount++;
+                        break;
                 }
             }
             this.Dispatcher.BeginInvoke((Action)(() =>
                 {
+                    var total = ellipseCount + lineCount + pointCount + textCount + bezierCount;
                     debugText.Height = double.NaN;
-                    debugText.Text = string.Format("Primitive counts - {0} ellipses, {1} lines, {2} points, {3} text, {4} total.",
-                        ellipseCount, lineCount, pointCount, textCount, ellipseCount + lineCount + pointCount + textCount);
+                    debugText.Text = $"Primitive counts - {ellipseCount} ellipses, {lineCount} lines, {pointCount} points, {textCount} text, {bezierCount} bezier, {total} total.";
                 }));
         }
 

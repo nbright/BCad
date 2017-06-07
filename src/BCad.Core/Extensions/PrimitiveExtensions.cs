@@ -39,6 +39,7 @@ namespace BCad.Extensions
                     return ((PrimitiveLine)primitive).Thickness;
                 case PrimitiveKind.Point:
                 case PrimitiveKind.Text:
+                case PrimitiveKind.Bezier:
                     return 0.0;
                 default:
                     throw new InvalidOperationException("Unsupported primitive.");
@@ -123,6 +124,9 @@ namespace BCad.Extensions
                 case PrimitiveKind.Text:
                     result = Enumerable.Empty<Point>();
                     break;
+                case PrimitiveKind.Bezier:
+                    result = ((PrimitiveBezier)primitive).IntersectionPoints(other, withinBounds);
+                    break;
                 default:
                     Debug.Assert(false, "Unsupported primitive type");
                     result = Enumerable.Empty<Point>();
@@ -150,6 +154,9 @@ namespace BCad.Extensions
                     break;
                 case PrimitiveKind.Text:
                     result = Enumerable.Empty<Point>();
+                    break;
+                case PrimitiveKind.Bezier:
+                    result = ((PrimitiveBezier)other).IntersectionPoints(point, withinBounds);
                     break;
                 default:
                     Debug.Assert(false, "Unsupported primitive type");
@@ -200,6 +207,9 @@ namespace BCad.Extensions
                     break;
                 case PrimitiveKind.Text:
                     result = Enumerable.Empty<Point>();
+                    break;
+                case PrimitiveKind.Bezier:
+                    result = ((PrimitiveBezier)other).IntersectionPoints(line, withinBounds);
                     break;
                 default:
                     Debug.Assert(false, "Unsupported primitive type");
@@ -411,6 +421,9 @@ namespace BCad.Extensions
                 case PrimitiveKind.Text:
                     result = Enumerable.Empty<Point>();
                     break;
+                case PrimitiveKind.Bezier:
+                    result = ((PrimitiveBezier)primitive).IntersectionPoints(ellipse, withinBounds);
+                    break;
                 default:
                     Debug.Assert(false, "Unsupported primitive type");
                     result = Enumerable.Empty<Point>();
@@ -598,8 +611,23 @@ namespace BCad.Extensions
                         }
                         else
                         {
-                            // brute-force approximate intersections
-                            results = BruteForceEllipseWithUnitCircle(finalCenter, a, b);
+                            // can't be solved, fall back to bezier curve approximations
+                            var points = new List<Point>();
+                            foreach (var curveA in first.AsBezierCurves())
+                            {
+                                foreach (var curveB in second.AsBezierCurves())
+                                {
+                                    foreach (var point in curveA.IntersectionPoints(curveB))
+                                    {
+                                        if (!points.Any(p => p.CloseTo(point)))
+                                        {
+                                            points.Add(point);
+                                        }
+                                    }
+                                }
+                            }
+
+                            results = points;
                         }
 
                         results = results
@@ -686,29 +714,150 @@ namespace BCad.Extensions
             return results;
         }
 
-        private static IEnumerable<Point> BruteForceEllipseWithUnitCircle(Point center, double a, double b)
+        #endregion
+
+        #region Bezier-primitive intersection
+
+        public static IEnumerable<Point> IntersectionPoints(this PrimitiveBezier bezier, IPrimitive other, bool withinBounds = true)
         {
-            var results = new List<Point>();
-
-            Func<int, Point> ellipsePoint = (an) =>
-                new Point(COS[an] * a + center.X, SIN[an] * b + center.Y, 0);
-            Func<Point, bool> isInside = (p) => ((p.X * p.X) + (p.Y * p.Y)) <= 1;
-            var current = ellipsePoint(0);
-            var inside = isInside(current);
-            for (int angle = 1; angle < 360; angle++)
+            IEnumerable<Point> result;
+            switch (other.Kind)
             {
-                var nextPoint = ellipsePoint(angle);
-                var next = isInside(nextPoint);
-                if (next != inside)
-                {
-                    results.Add(nextPoint);
-                }
-
-                inside = next;
-                current = nextPoint;
+                case PrimitiveKind.Ellipse:
+                    result = bezier.IntersectionPoints((PrimitiveEllipse)other, withinBounds);
+                    break;
+                case PrimitiveKind.Line:
+                    result = bezier.IntersectionPoints((PrimitiveLine)other, withinBounds);
+                    break;
+                case PrimitiveKind.Point:
+                    var point = (PrimitivePoint)other;
+                    result = bezier.IsPointOnPrimitive(point.Location) ? new[] { point.Location } : Enumerable.Empty<Point>();
+                    break;
+                case PrimitiveKind.Text:
+                    result = Enumerable.Empty<Point>();
+                    break;
+                case PrimitiveKind.Bezier:
+                    result = bezier.IntersectionPoints((PrimitiveBezier)other);
+                    break;
+                default:
+                    Debug.Assert(false, "Unsupported primitive type");
+                    result = Enumerable.Empty<Point>();
+                    break;
             }
 
-            return results;
+            return result;
+        }
+
+        private static IEnumerable<Point> IntersectionPoints(this PrimitiveBezier bezier, PrimitiveEllipse ellipse, bool withinBounds = true)
+        {
+            var ellipseCurves = ellipse.AsBezierCurves();
+            var allPoints = ellipseCurves.SelectMany(ec => bezier.IntersectionPoints(ec, withinBounds));
+
+            // correct all points to be exactly on the ellipse according to their angle
+            // this accounts for very minor innacuracies with bezier-bezier intersections and
+            // ensures all found points lie exactly on the ellipse
+            var fromUnitCircle = ellipse.FromUnitCircle;
+            var toUnitCircle = fromUnitCircle.Inverse();
+            var pointAngles = allPoints.Select(toUnitCircle.Transform)
+                .Select(p => Math.Atan2(p.Y, p.X));
+            var angleCorrectedPoints = pointAngles.Select(a => new Point(Math.Cos(a), Math.Sin(a), 0.0))
+                .Select(fromUnitCircle.Transform);
+            if (withinBounds)
+            {
+                // some points might not be on the actual ellipse, so we need to check this again
+                angleCorrectedPoints = angleCorrectedPoints.Where(p => ellipse.IsPointOnPrimitive(p));
+            }
+
+            return angleCorrectedPoints;
+        }
+
+        private static IEnumerable<Point> IntersectionPoints(this PrimitiveBezier bezier, PrimitiveLine line, bool withinBounds = true)
+        {
+            // rotate curve and line such that the line now lies on the X-axis; find zeros of curve and undo the transformation
+            var delta = line.P2 - line.P1;
+            var transformToOrigin =
+                Matrix4.RotateAboutZ(Math.Atan2(delta.Y, delta.X) * MathHelper.RadiansToDegrees) *
+                Matrix4.CreateTranslate(-line.P1.X, -line.P1.Y, 0.0);
+
+            // verify the transformation is correct
+            Debug.Assert(transformToOrigin.Transform(line.P1).CloseTo(Point.Origin));
+            Debug.Assert(MathHelper.CloseTo(0.0, transformToOrigin.Transform(line.P2).Y));
+
+            var transformBack = transformToOrigin.Inverse();
+            var transformedBezier = new PrimitiveBezier(
+                transformToOrigin.Transform(bezier.P1),
+                transformToOrigin.Transform(bezier.P2),
+                transformToOrigin.Transform(bezier.P3),
+                transformToOrigin.Transform(bezier.P4));
+            var zeros = transformedBezier.FindYRoots();
+            if (withinBounds)
+            {
+                zeros = zeros.Where(t => t >= 0.0 && t <= 1.0);
+            }
+
+            var zeroPoints = zeros
+                .Select(transformedBezier.ComputeParameterizedPoint)
+                .Select(transformBack.Transform);
+
+            if (withinBounds)
+            {
+                zeroPoints = zeroPoints.Where(line.IsPointOnPrimitive);
+            }
+
+            return zeroPoints;
+        }
+
+        private static IEnumerable<Point> IntersectionPoints(this PrimitiveBezier bezier, PrimitiveBezier other)
+        {
+            var points = new List<Point>();
+            var queue = new Queue<Tuple<PrimitiveBezier, PrimitiveBezier>>();
+            queue.Enqueue(Tuple.Create(bezier, other));
+            while (queue.Count > 0)
+            {
+                var pair = queue.Dequeue();
+                var first = pair.Item1;
+                var second = pair.Item2;
+                var boxA = first.GetBoundingBox();
+                var boxB = second.GetBoundingBox();
+                if (boxA.Intersects(boxB))
+                {
+                    var epsilon = MathHelper.Epsilon;
+                    if (boxA.Size.X <= epsilon && boxB.Size.X <= epsilon &&
+                        boxA.Size.Y <= epsilon && boxB.Size.Y <= epsilon &&
+                        boxA.Size.Z <= epsilon && boxB.Size.Z <= epsilon)
+                    {
+                        // if bounding boxes are sufficiently small, it's an intersection point
+                        var candidatePoint = boxA.MinimumPoint;
+                        if (!points.Any(p => p.CloseTo(candidatePoint)))
+                        {
+                            // only keep unique-ish points, since bezier-bezier intersections aren't exact
+                            // checking all points shouldn't be too expensive since there are a maximum of 9
+                            // intersection points between any two given bezier curves
+                            points.Add(candidatePoint);
+                        }
+                    }
+                    else
+                    {
+                        // otherwise split all curves and continue the loop
+                        var pair1 = first.Split(0.5);
+                        var pair2 = second.Split(0.5);
+                        var a = pair1.Item1;
+                        var b = pair1.Item2;
+                        var c = pair2.Item1;
+                        var d = pair2.Item2;
+                        queue.Enqueue(Tuple.Create(a, c));
+                        queue.Enqueue(Tuple.Create(a, d));
+                        queue.Enqueue(Tuple.Create(b, c));
+                        queue.Enqueue(Tuple.Create(b, d));
+                    }
+                }
+                else
+                {
+                    // no intersection of bounding boxes so no intersection of curves
+                }
+            }
+
+            return points;
         }
 
         #endregion
@@ -782,6 +931,14 @@ namespace BCad.Extensions
                         text.Normal,
                         text.Rotation,
                         text.Color);
+                case PrimitiveKind.Bezier:
+                    var bezier = (PrimitiveBezier)primitive;
+                    return new PrimitiveBezier(
+                        bezier.P1 + offset,
+                        bezier.P2 + offset,
+                        bezier.P3 + offset,
+                        bezier.P4 + offset,
+                        bezier.Color);
                 default:
                     throw new ArgumentException("primitive.Kind");
             }
@@ -797,6 +954,8 @@ namespace BCad.Extensions
                     return IsPointOnPrimitive((PrimitiveEllipse)primitive, point);
                 case PrimitiveKind.Text:
                     return IsPointOnPrimitive((PrimitiveText)primitive, point);
+                case PrimitiveKind.Bezier:
+                    return IsPointOnPrimitive((PrimitiveBezier)primitive, point);
                 default:
                     Debug.Assert(false, "unexpected primitive: " + primitive.Kind);
                     return false;
@@ -844,6 +1003,16 @@ namespace BCad.Extensions
             return false;
         }
 
+        private static bool IsPointOnPrimitive(this PrimitiveBezier bezier, Point point)
+        {
+            // translate curve down by `point.Y`, then solve for zeros and see if any X values == `point.X`
+            var original = bezier;
+            bezier = (PrimitiveBezier)original.Move(new Vector(0.0, -point.Y, 0.0));
+            var roots = bezier.FindYRoots().Where(r => r >= 0.0 && r <= 1.0);
+            var points = roots.Select(original.ComputeParameterizedPoint).Where(px => MathHelper.CloseTo(px.X, point.X));
+            return points.Count() > 0;
+        }
+
         public static double GetAngle(this PrimitiveEllipse ellipse, Point point)
         {
             var transform = ellipse.FromUnitCircle.Inverse();
@@ -888,6 +1057,10 @@ namespace BCad.Extensions
                             text.Location + up,
                             text.Location
                         };
+                    break;
+                case PrimitiveKind.Bezier:
+                    var bezier = (PrimitiveBezier)primitive;
+                    points = new[] { bezier.P1, bezier.P2, bezier.P3, bezier.P4 };
                     break;
                 default:
                     throw new InvalidOperationException();
@@ -1019,6 +1192,8 @@ namespace BCad.Extensions
                     return el.GetPoint(el.StartAngle);
                 case PrimitiveKind.Point:
                     return ((PrimitivePoint)primitive).Location;
+                case PrimitiveKind.Bezier:
+                    return ((PrimitiveBezier)primitive).P1;
                 default:
                     throw new ArgumentException($"{nameof(primitive)}.{nameof(primitive.Kind)}");
             }
@@ -1035,6 +1210,8 @@ namespace BCad.Extensions
                     return el.GetPoint(el.EndAngle);
                 case PrimitiveKind.Point:
                     return ((PrimitivePoint)primitive).Location;
+                case PrimitiveKind.Bezier:
+                    return ((PrimitiveBezier)primitive).P4;
                 default:
                     throw new ArgumentException($"{nameof(primitive)}.{nameof(primitive.Kind)}");
             }
@@ -1058,6 +1235,8 @@ namespace BCad.Extensions
                     return el.GetPoint((el.StartAngle + endAngle) * 0.5);
                 case PrimitiveKind.Point:
                     return ((PrimitivePoint)primitive).Location;
+                case PrimitiveKind.Bezier:
+                    return ((PrimitiveBezier)primitive).ComputeParameterizedPoint(0.5); // find midpoint by length?
                 case PrimitiveKind.Text:
                 default:
                     throw new ArgumentException($"{nameof(primitive)}.{nameof(primitive.Kind)}");
@@ -1071,6 +1250,7 @@ namespace BCad.Extensions
                 case PrimitiveKind.Line:
                 case PrimitiveKind.Point:
                 case PrimitiveKind.Text:
+                case PrimitiveKind.Bezier:
                     return primitive.GetInterestingPoints().Select(p => transformationMatrix.Transform(p));
                 case PrimitiveKind.Ellipse:
                     return ((PrimitiveEllipse)primitive).GetProjectedVerticies(transformationMatrix, 360);

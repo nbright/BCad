@@ -1,6 +1,7 @@
 ﻿// Copyright (c) IxMilia.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using BCad.Entities;
 using BCad.Extensions;
@@ -10,6 +11,8 @@ namespace BCad.Primitives
 {
     public class PrimitiveEllipse : IPrimitive
     {
+        private const double BezierConstant = 0.551915024494;
+
         public Point Center { get; private set; }
         public Vector MajorAxis { get; private set; }
         public Vector Normal { get; private set; }
@@ -61,6 +64,45 @@ namespace BCad.Primitives
         public PrimitiveEllipse(Point center, double radius, double startAngle, double endAngle, Vector normal, CadColor? color = null, double thickness = default(double))
             : this(center, Vector.RightVectorFromNormal(normal) * radius, normal, 1.0, startAngle, endAngle, color, thickness)
         {
+        }
+
+        /// <summary>
+        /// Returns a collection of 4 <see cref="PrimitiveBezier"/>s that represent the untrimmed ellipse.
+        /// </summary>
+        /// <returns></returns>
+        public IEnumerable<PrimitiveBezier> AsBezierCurves()
+        {
+            var minorAxis = MajorAxis.Cross(Normal).Normalize() * MajorAxis.Length * MinorAxisRatio;
+            var majorAxisScaled = MajorAxis.Normalize() * MajorAxis.Length * BezierConstant;
+            var minorAxisScaled = minorAxis.Normalize() * minorAxis.Length * BezierConstant;
+
+            // first quadrant
+            yield return new PrimitiveBezier(
+                Center + MajorAxis,
+                Center + MajorAxis + minorAxisScaled,
+                Center + minorAxis + majorAxisScaled,
+                Center + minorAxis);
+
+            // second quadrant
+            yield return new PrimitiveBezier(
+                Center + minorAxis,
+                Center + minorAxis - majorAxisScaled,
+                Center - MajorAxis + minorAxisScaled,
+                Center - MajorAxis);
+
+            // third quadrant
+            yield return new PrimitiveBezier(
+                Center - MajorAxis,
+                Center - MajorAxis - minorAxisScaled,
+                Center - minorAxis - majorAxisScaled,
+                Center - minorAxis);
+
+            // fourth quadrant
+            yield return new PrimitiveBezier(
+                Center - minorAxis,
+                Center - minorAxis + majorAxisScaled,
+                Center + MajorAxis - minorAxisScaled,
+                Center + MajorAxis);
         }
 
         /// <summary>
