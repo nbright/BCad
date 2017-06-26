@@ -2,12 +2,12 @@
 
 using Newtonsoft.Json.Linq;
 
-namespace BCad.Server
+namespace BCad.Server.JsonRpc
 {
-    public class Request
+    public class JsonRpcResponse
     {
-        public string Method { get; set; }
-        public JObject[] Params { get; set; }
+        public JToken Result { get; set; }
+        public JToken Error { get; set; }
         public int? Id { get; set; }
     }
 }
